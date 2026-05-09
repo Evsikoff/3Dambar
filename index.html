@@ -1,0 +1,316 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>3D Модель Сарая</title>
+    <style>
+        body { 
+            margin: 0; 
+            overflow: hidden; 
+            background-color: #87CEEB; /* Цвет неба */
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
+        #info {
+            position: absolute;
+            top: 10px;
+            width: 100%;
+            text-align: center;
+            color: #333;
+            pointer-events: none;
+            background: rgba(255, 255, 255, 0.7);
+            padding: 10px 0;
+            font-weight: bold;
+            z-index: 10;
+        }
+        .label {
+            color: #000;
+            background: rgba(255, 255, 255, 0.9);
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 12px;
+            font-weight: bold;
+            pointer-events: none;
+            border: 1px solid #555;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+            white-space: nowrap;
+            margin-top: -10px;
+        }
+        .corner-label {
+            color: #fff;
+            background: #ff5722; /* Оранжевый цвет для контраста */
+            width: 24px;
+            height: 24px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 12px;
+            font-weight: bold;
+            pointer-events: none;
+            border: 2px solid #fff;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.4);
+            margin-top: -12px; /* Центрируем маркер по точке */
+        }
+    </style>
+</head>
+<body>
+    <div id="info">ЛКМ - Вращение | ПКМ - Перемещение | Колесико - Зум</div>
+
+    <!-- Загрузка Three.js напрямую через ES-модули -->
+    <script type="importmap">
+  {
+    "imports": {
+      "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+      "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+    }
+  }
+</script>
+    <script type="module">
+        import * as THREE from 'https://unpkg.com/three@0.160.0/build/three.module.js';
+        import { OrbitControls } from 'https://unpkg.com/three@0.160.0/examples/jsm/controls/OrbitControls.js';
+        import { CSS2DRenderer, CSS2DObject } from 'https://unpkg.com/three@0.160.0/examples/jsm/renderers/CSS2DRenderer.js';
+
+        // --- ПАРАМЕТРЫ САРАЯ ---
+        const W = 6.046;              // Ширина (фронт)
+        const D = 3.049;              // Глубина (бока)
+        const hHigh = 2.654;          // Высота высокой стены (спереди)
+        const hLow = 2.390;           // Высота короткой стены (сзади)
+        
+        const roofOverhangFront = 1.056; // Фронтонный свес (над длинной стеной/верандой)
+        const roofOverhangRear = 0.528;  // Задний свес
+        const roofOverhangSide = 0.528;  // Карнизный свес (по коротким сторонам)
+        const fasciaW = 0.15;            // Стандартная лобовая доска (15 см)
+        
+        const verandaW = W;              // Веранда на всю ширину
+        const verandaD = 1.056;          // Ширина (выступ) веранды
+        const verandaThick = 0.17;       // Толщина доски веранды
+        
+        const stairStringerL = 1.571;    // Длина тетивы лестницы
+        const boardWidth = 0.14;         // Ширина имитации бруса (14 см)
+
+        // --- ИНИЦИАЛИЗАЦИЯ СЦЕНЫ ---
+        const scene = new THREE.Scene();
+        scene.fog = new THREE.FogExp2(0x87CEEB, 0.02);
+
+        const camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 100);
+        camera.position.set(8, 6, 12);
+
+        const renderer = new THREE.WebGLRenderer({ antialias: true });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.shadowMap.enabled = true;
+        document.body.appendChild(renderer.domElement);
+
+        const labelRenderer = new CSS2DRenderer();
+        labelRenderer.setSize(window.innerWidth, window.innerHeight);
+        labelRenderer.domElement.style.position = 'absolute';
+        labelRenderer.domElement.style.top = '0px';
+        document.body.appendChild(labelRenderer.domElement);
+
+        const controls = new OrbitControls(camera, labelRenderer.domElement);
+        controls.target.set(0, 1.5, -1.5);
+        controls.update();
+
+        // СВЕТ
+        const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
+        scene.add(ambientLight);
+        const dirLight = new THREE.DirectionalLight(0xffffff, 1.2);
+        dirLight.position.set(10, 15, 10);
+        dirLight.castShadow = true;
+        scene.add(dirLight);
+
+        // --- ГЕНЕРАЦИЯ ТЕКСТУРЫ (Имитация бруса) ---
+        function createWoodTexture() {
+            const canvas = document.createElement('canvas');
+            canvas.width = 64;
+            canvas.height = 64;
+            const ctx = canvas.getContext('2d');
+            
+            // Основной цвет дерева
+            ctx.fillStyle = '#d2b48c'; 
+            ctx.fillRect(0, 0, 64, 64);
+            
+            // Фаска/стык между досками
+            ctx.strokeStyle = '#8b5a2b';
+            ctx.lineWidth = 3;
+            ctx.beginPath();
+            ctx.moveTo(0, 64);
+            ctx.lineTo(64, 64);
+            ctx.stroke();
+
+            const tex = new THREE.CanvasTexture(canvas);
+            tex.wrapS = THREE.RepeatWrapping;
+            tex.wrapT = THREE.RepeatWrapping;
+            // Анизотропная фильтрация для четкости под углом
+            tex.anisotropy = renderer.capabilities.getMaxAnisotropy();
+            return tex;
+        }
+
+        const woodTex = createWoodTexture();
+        const baseMat = new THREE.MeshStandardMaterial({ color: 0xffffff });
+        
+        // --- ПОСТРОЕНИЕ ГЕОМЕТРИИ ---
+        const shedGroup = new THREE.Group();
+        scene.add(shedGroup);
+
+        // 1. СТЕНЫ (Передняя, Задняя, Боковые)
+        // Для каждой стены рассчитываем repeat текстуры по Y = Высота / 0.14
+        
+        // Передняя стена (высокая)
+        const frontGeo = new THREE.PlaneGeometry(W, hHigh);
+        const matFront = baseMat.clone();
+        matFront.map = woodTex.clone();
+        matFront.map.repeat.set(W, hHigh / boardWidth);
+        const frontWall = new THREE.Mesh(frontGeo, matFront);
+        frontWall.position.set(0, hHigh/2, 0);
+        frontWall.castShadow = true; frontWall.receiveShadow = true;
+        shedGroup.add(frontWall);
+
+        // Задняя стена (низкая)
+        const backGeo = new THREE.PlaneGeometry(W, hLow);
+        const matBack = baseMat.clone();
+        matBack.map = woodTex.clone();
+        matBack.map.repeat.set(W, hLow / boardWidth);
+        const backWall = new THREE.Mesh(backGeo, matBack);
+        backWall.position.set(0, hLow/2, -D);
+        backWall.rotation.y = Math.PI;
+        backWall.castShadow = true; backWall.receiveShadow = true;
+        shedGroup.add(backWall);
+
+        // Боковые стены (Трапеции)
+        const sideShape = new THREE.Shape();
+        sideShape.moveTo(0, 0);
+        sideShape.lineTo(D, 0);
+        sideShape.lineTo(D, hLow);
+        sideShape.lineTo(0, hHigh);
+        
+        const sideGeo = new THREE.ShapeGeometry(sideShape);
+        const matSide = baseMat.clone();
+        matSide.map = woodTex.clone();
+        matSide.map.repeat.set(D, hHigh / boardWidth);
+        matSide.side = THREE.DoubleSide;
+
+        const leftWall = new THREE.Mesh(sideGeo, matSide);
+        leftWall.position.set(-W/2, 0, 0);
+        leftWall.rotation.y = Math.PI / 2;
+        leftWall.castShadow = true; leftWall.receiveShadow = true;
+        shedGroup.add(leftWall);
+
+        const rightWall = new THREE.Mesh(sideGeo, matSide);
+        rightWall.position.set(W/2, 0, 0);
+        rightWall.rotation.y = Math.PI / 2;
+        rightWall.castShadow = true; rightWall.receiveShadow = true;
+        shedGroup.add(rightWall);
+
+        // 2. КРЫША (Односкатная)
+        const slopeHeightDiff = hHigh - hLow;
+        const slopeAngle = Math.atan2(slopeHeightDiff, D);
+        
+        const roofHorizontalLen = roofOverhangFront + D + roofOverhangRear;
+        const roofSlopedLen = roofHorizontalLen / Math.cos(slopeAngle);
+        const roofTotalWidth = W + (roofOverhangSide * 2);
+
+        const roofGeo = new THREE.BoxGeometry(roofTotalWidth, fasciaW, roofSlopedLen);
+        const roofMat = new THREE.MeshStandardMaterial({ color: 0x4a4a4a }); // Темно-серая крыша
+        const roof = new THREE.Mesh(roofGeo, roofMat);
+        
+        // Вычисление центра крыши (по Z)
+        const zCenter = (roofOverhangFront - (D + roofOverhangRear)) / 2;
+        // Высота крыши над центром Z (линейная интерполяция)
+        const yCenterOffset = hHigh - ((roofOverhangFront - zCenter) * Math.tan(slopeAngle));
+        
+        roof.position.set(0, yCenterOffset + (fasciaW/2)/Math.cos(slopeAngle), zCenter);
+        roof.rotation.x = -slopeAngle;
+        roof.castShadow = true;
+        shedGroup.add(roof);
+
+        // 3. ВЕРАНДА
+        const verandaGeo = new THREE.BoxGeometry(verandaW, verandaThick, verandaD);
+        const verandaMat = new THREE.MeshStandardMaterial({ color: 0x8b5a2b });
+        const veranda = new THREE.Mesh(verandaGeo, verandaMat);
+        veranda.position.set(0, verandaThick/2, verandaD/2);
+        veranda.castShadow = true; veranda.receiveShadow = true;
+        shedGroup.add(veranda);
+
+        // 4. ЛЕСТНИЦА (слева из веранды)
+        // Катет X = sqrt(тетива^2 - высота^2)
+        const stairRun = Math.sqrt(Math.pow(stairStringerL, 2) - Math.pow(verandaThick, 2));
+        const stairTheta = Math.asin(verandaThick / stairStringerL);
+
+        const stairGeo = new THREE.BoxGeometry(stairStringerL, 0.05, verandaD);
+        const stairs = new THREE.Mesh(stairGeo, verandaMat);
+        
+        // Размещаем слева (выходит в сторону -X)
+        stairs.position.set(-W/2 - stairRun/2, verandaThick/2, verandaD/2);
+        stairs.rotation.z = stairTheta;
+        stairs.castShadow = true; stairs.receiveShadow = true;
+        shedGroup.add(stairs);
+
+        // 5. ЗЕМЛЯ
+        const ground = new THREE.Mesh(
+            new THREE.PlaneGeometry(50, 50),
+            new THREE.MeshStandardMaterial({ color: 0x6b8e23 })
+        );
+        ground.rotation.x = -Math.PI / 2;
+        ground.receiveShadow = true;
+        scene.add(ground);
+
+        // --- СОЗДАНИЕ ВЫНОСОК (CSS2D) ---
+        function addLabel(text, x, y, z) {
+            const div = document.createElement('div');
+            div.className = 'label';
+            div.textContent = text;
+            const label = new CSS2DObject(div);
+            label.position.set(x, y, z);
+            shedGroup.add(label);
+        }
+
+        function addCornerLabel(text, x, y, z) {
+            const div = document.createElement('div');
+            div.className = 'corner-label';
+            div.textContent = text;
+            const label = new CSS2DObject(div);
+            label.position.set(x, y, z);
+            shedGroup.add(label);
+        }
+
+        // Нижние углы основания
+        addCornerLabel('А1', -W/2, 0, 0);
+        addCornerLabel('А2',  W/2, 0, 0);
+        addCornerLabel('Б1', -W/2, 0, -D);
+        addCornerLabel('Б2',  W/2, 0, -D);
+
+        // Верхние углы стен
+        addCornerLabel('А3', -W/2, hHigh, 0);
+        addCornerLabel('А4',  W/2, hHigh, 0);
+        addCornerLabel('Б3', -W/2, hLow, -D);
+        addCornerLabel('Б4',  W/2, hLow, -D);
+
+        // Выноски размеров ребер
+        addLabel(`Ширина: ${W} м`, 0, hHigh, 0);
+        addLabel(`Глубина: ${D} м`, -W/2, hHigh/2, -D/2);
+        addLabel(`Высота (фронт): ${hHigh} м`, W/2, hHigh/2, 0);
+        addLabel(`Высота (тыл): ${hLow} м`, W/2, hLow/2, -D);
+        addLabel(`Свес (фронт): ${roofOverhangFront} м`, 0, hHigh + 0.2, verandaD/2);
+        addLabel(`Свес (карниз): ${roofOverhangSide} м`, W/2 + roofOverhangSide/2, hHigh, -D/2);
+        addLabel(`Веранда (глубина): ${verandaD} м`, W/4, verandaThick, verandaD/2);
+        addLabel(`Тетива лестницы: ${stairStringerL} м`, -W/2 - stairRun/2, verandaThick + 0.3, verandaD/2);
+
+        // --- АНИМАЦИЯ И РЕНДЕР ---
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            labelRenderer.setSize(window.innerWidth, window.innerHeight);
+        });
+
+        function animate() {
+            requestAnimationFrame(animate);
+            controls.update();
+            renderer.render(scene, camera);
+            labelRenderer.render(scene, camera);
+        }
+        animate();
+    </script>
+</body>
+</html>
