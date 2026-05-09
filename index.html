@@ -52,10 +52,27 @@
             box-shadow: 0 2px 4px rgba(0,0,0,0.4);
             margin-top: -12px; /* Центрируем маркер по точке */
         }
+        #btnAreas {
+            position: absolute;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            padding: 8px 22px;
+            font-size: 14px;
+            font-weight: bold;
+            cursor: pointer;
+            background: rgba(255,255,255,0.92);
+            border: 2px solid #555;
+            border-radius: 6px;
+            z-index: 10;
+            user-select: none;
+        }
+        #btnAreas:hover { background: rgba(215,215,215,0.97); }
     </style>
 </head>
 <body>
     <div id="info">ЛКМ - Вращение | ПКМ - Перемещение | Колесико - Зум</div>
+    <button id="btnAreas">Площадь плоскостей</button>
 
     <!-- Загрузка Three.js напрямую через ES-модули -->
     <script type="importmap">
@@ -395,6 +412,7 @@
         scene.add(ground);
 
         // --- СОЗДАНИЕ ВЫНОСОК (CSS2D) ---
+        const dimensionLabels = [];
         function addLabel(text, x, y, z) {
             const div = document.createElement('div');
             div.className = 'label';
@@ -402,6 +420,7 @@
             const label = new CSS2DObject(div);
             label.position.set(x, y, z);
             shedGroup.add(label);
+            dimensionLabels.push(label);
         }
 
         function addCornerLabel(text, x, y, z) {
@@ -434,6 +453,38 @@
         addLabel(`Свес (карниз): ${roofOverhangSide} м`, W/2 + roofOverhangSide/2, hHigh, -D/2);
         addLabel(`Веранда (глубина): ${verandaD} м`, W/4, verandaThick, verandaD/2);
         addLabel(`Тетива лестницы: ${stairStringerL} м`, -W/2 - stairRun/2, verandaThick + 0.3, verandaD/2);
+
+        // --- ПЛОЩАДИ ГРАНЕЙ (скрыты по умолчанию) ---
+        const areaLabels = [];
+        function addAreaLabel(text, x, y, z) {
+            const div = document.createElement('div');
+            div.className = 'label';
+            div.textContent = text;
+            const lbl = new CSS2DObject(div);
+            lbl.position.set(x, y, z);
+            lbl.visible = false;
+            shedGroup.add(lbl);
+            areaLabels.push(lbl);
+        }
+
+        // Y-координата центра тяжести боковой трапеции
+        const sideCY = (hHigh * hHigh + hHigh * hLow + hLow * hLow) / (3 * (hHigh + hLow));
+
+        addAreaLabel(`Фасад: ${(W * hHigh).toFixed(2)} м²`,                         0,           hHigh / 2,           0.15);
+        addAreaLabel(`Тыл: ${(W * hLow).toFixed(2)} м²`,                             0,           hLow / 2,            -D - 0.15);
+        addAreaLabel(`Левая стена: ${((hHigh + hLow) / 2 * D).toFixed(2)} м²`,      -W/2 - 0.15, sideCY,              -D / 2);
+        addAreaLabel(`Правая стена: ${((hHigh + hLow) / 2 * D).toFixed(2)} м²`,      W/2 + 0.15, sideCY,              -D / 2);
+        addAreaLabel(`Крыша: ${(roofTotalWidth * roofSlopedLen).toFixed(2)} м²`,      0,          yCenterOffset + 0.4, zCenter);
+        addAreaLabel(`Веранда: ${(verandaW * verandaD).toFixed(2)} м²`,              0,          verandaThick + 0.15, verandaD / 2);
+        addAreaLabel(`Пол: ${(W * D).toFixed(2)} м²`,                                0,          0.05,                -D / 2);
+
+        // Переключатель по кнопке
+        let showAreas = false;
+        document.getElementById('btnAreas').addEventListener('click', () => {
+            showAreas = !showAreas;
+            dimensionLabels.forEach(l => { l.visible = !showAreas; });
+            areaLabels.forEach(l => { l.visible = showAreas; });
+        });
 
         // --- АНИМАЦИЯ И РЕНДЕР ---
         window.addEventListener('resize', () => {
